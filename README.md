@@ -41,3 +41,10 @@ py main.py
 ```bash
 docker compose up
 ```
+
+#### Ещё можете поменять выставляемые баллы в файле docker-compose.yml (по дефолту стоит 100 баллов):
+```yaml
+    environment:
+      - STUDENT_SCORE=100
+      - CURATOR_SCORE=100
+```
