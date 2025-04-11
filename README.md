@@ -1,10 +1,10 @@
 # urfu-teampro-auto-grader
 
-Данный скрипт помогает выставить баллы всем во всех активных проектах на протале teamproject.urfu.ru
+Данный скрипт помогает выставить баллы всем во всех активных проектах на портале teamproject.urfu.ru
 
 ## Как поднять скрипт
 
-### Сначала нужно в файле credentials.json нужно ввести свой логин и пароль от учетной записи УРФУ: 
+### Сначала нужно в файле [credentials.json](https://github.com/ve3xone/urfu-teampro-auto-grader/blob/main/credentials.json) нужно ввести свой логин и пароль от учетной записи УРФУ: 
 ```json
 [
   {
@@ -42,7 +42,12 @@ py main.py
 docker compose up
 ```
 
-#### Ещё можете поменять выставляемые баллы в файле docker-compose.yml (по дефолту стоит 100 баллов):
+Чтоб работал в фоне добавьте -d:
+```bash
+docker compose up -d
+```
+
+#### Ещё можете поменять выставляемые баллы в файле [docker-compose.yml](https://github.com/ve3xone/urfu-teampro-auto-grader/blob/main/docker-compose.yml) (по дефолту стоит 100 баллов):
 ```yaml
     environment:
       - STUDENT_SCORE=100
