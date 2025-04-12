@@ -6,12 +6,14 @@ import os
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs
 
+
 # Настройка логгирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
 
 def get_auth_code(username, password, client_id, redirect_uri):
     session = requests.Session()
@@ -150,6 +152,7 @@ def process_user(credentials):
     projects = get_active_projects(session, access_token, year, term)
     grade_all(session, access_token, projects, student_score, curator_score)
 
+
 def main():
     with open('credentials.json', 'r', encoding='utf-8') as f:
         users = json.load(f)
@@ -161,6 +164,7 @@ def main():
 
         logging.info("Цикл завершён. Пауза на 6 часов.")
         time.sleep(21600)  # каждые 6 часов
+
 
 if __name__ == '__main__':
     main()
