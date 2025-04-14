@@ -3,8 +3,10 @@ import time
 import logging
 import json
 import os
-from bs4 import BeautifulSoup
+import random
+from datetime import datetime, date
 from urllib.parse import urlparse, parse_qs
+from bs4 import BeautifulSoup
 
 
 # Настройка логгирования
@@ -95,6 +97,23 @@ def get_active_projects(session, access_token, year, term):
     return items
 
 
+def get_iteration_scores(session, access_token, iteration_id):
+    url = f'https://teamproject.urfu.ru/api/v2/iterations/{iteration_id}/scores'
+    headers = {'Authorization': f'Bearer {access_token}'}
+    response = session.get(url, headers=headers).json()
+    return response
+
+
+# Функция для безопасного получения даты
+def get_date_from_dict(info_scores_iter, key, default_value=date.today()):
+    date_str = info_scores_iter.get('iteration', {}).get('gradingPeriod', {}).get(key, default_value)
+    
+    # Проверяем, если значение - строка, пытаемся преобразовать его в datetime.date
+    if isinstance(date_str, str):
+        return datetime.strptime(date_str, '%Y-%m-%d').date()
+    return date_str
+
+
 def grade_all(session, access_token, projects, student_score, curator_score):
     put_headers = {
         'Authorization': f'Bearer {access_token}',
@@ -112,22 +131,27 @@ def grade_all(session, access_token, projects, student_score, curator_score):
         for iteration in iterations:
             iter_id = iteration['id']
             iter_name = iteration['title']
+            
+            info_scores_iter = get_iteration_scores(session, access_token, iter_id)
 
-            session.put(f'https://teamproject.urfu.ru/api/v2/iterations/{iter_id}/grades/curator',
-                        headers=put_headers, data='{"score":'+str(curator_score)+'}')
-            logging.info(f"[{project_name}] [{iter_name}] Выставлен балл куратору — оценка {curator_score}")
+            begin_date = get_date_from_dict(info_scores_iter, 'beginning')
+            end_date = get_date_from_dict(info_scores_iter, 'ending')
 
-            scores_url = f'https://teamproject.urfu.ru/api/v2/iterations/{iter_id}/scores'
-            scores = session.get(scores_url, headers={'Authorization': f'Bearer {access_token}'}).json()
+            if begin_date <= date.today() <= end_date:
+                session.put(f'https://teamproject.urfu.ru/api/v2/iterations/{iter_id}/grades/curator',
+                            headers=put_headers, data='{"score":'+str(curator_score)+'}')
+                logging.info(f"[{project_name}] [{iter_name}] Выставлен балл куратору — оценка {curator_score}")
 
-            for group in scores.get('thematicGroups', []):
-                for student in group.get('students', []):
-                    student_id = student['studentId']
-                    student_name = student['person']['fullname']
+                for group in info_scores_iter.get('thematicGroups', []):
+                    for student in group.get('students', []):
+                        student_id = student['studentId']
+                        student_name = student['person']['fullname']
 
-                    session.put(f'https://teamproject.urfu.ru/api/v2/iterations/{iter_id}/grades/students/{student_id}',
-                                headers=put_headers, data='{"score":'+str(student_score)+'}')
-                    logging.info(f"[{project_name}] [{iter_name}] Студент {student_name} — оценка {student_score}")
+                        session.put(f'https://teamproject.urfu.ru/api/v2/iterations/{iter_id}/grades/students/{student_id}',
+                                    headers=put_headers, data='{"score":'+str(student_score)+'}')
+                        logging.info(f"[{project_name}] [{iter_name}] Студент {student_name} — оценка {student_score}")
+            else:
+                logging.info(f"[{project_name}] [{iter_name}] Пропускаем итерацию (так как не наступило время для её оценки)")
 
 
 def process_user(credentials):
@@ -160,10 +184,13 @@ def main():
     while True:
         for credentials in users:
             process_user(credentials)
-            time.sleep(5)  # чуть подождать между пользователями
+            delay_users = random.uniform(3, 6)
+            time.sleep(delay_users)  # чуть подождать между пользователями
 
-        logging.info("Цикл завершён. Пауза на 6 часов.")
-        time.sleep(21600)  # каждые 6 часов
+        global_delay = random.uniform(18000, 21600)
+        global_delay_hours = global_delay / 3600
+        logging.info(f"Цикл завершён. Пауза на {global_delay_hours:.2f} часов.")
+        time.sleep(global_delay)
 
 
 if __name__ == '__main__':
