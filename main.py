@@ -201,23 +201,34 @@ def process_user(credentials: dict):
     grade_all(session, access_token, projects, STUDENT_SCORE, CURATOR_SCORE)
 
 
+def check_connection(url="https://www.ya.ru"):
+    try:
+        response = requests.get(url, timeout=5)
+        return response.status_code == 200
+    except requests.ConnectionError:
+        return False
+
+
 def main():
     with open('credentials.json', 'r', encoding='utf-8') as f:
         users = json.load(f)
         count_users = len(users)
 
     while True:
-        for credentials in users:
-            process_user(credentials)
-            # чуть подождать между пользователями
-            if count_users > 1:
-                delay_users = random.uniform(5, 30)
-                logging.info(f"Ждем между пользователями. Пауза на {delay_users} секунд.")
-                time.sleep(delay_users)
+        if check_connection():
+            for credentials in users:
+                process_user(credentials)
+                # чуть подождать между пользователями
+                if count_users > 1:
+                    delay_users = random.uniform(5, 30)
+                    logging.info(f"Ждем между пользователями. Пауза на {delay_users} секунд.")
+                    time.sleep(delay_users)
 
-        if not LOOP_FLAG:
-            logging.info("Работа завершена после одного прохода. Так как LOOP_FLAG=false.")
-            break
+            if not LOOP_FLAG:
+                logging.info("Работа завершена после одного прохода. Так как LOOP_FLAG=false.")
+                break
+        else:
+            logging.error('Интернет не доступен.')
 
         global_delay = random.uniform(18000, 21600)
         global_delay_hours = global_delay / 3600
