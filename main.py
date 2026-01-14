@@ -4,12 +4,12 @@ import logging
 import json
 import os
 import random
+from typing import Tuple
 from datetime import datetime, date
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
 
 
-# Настройка логгирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -17,7 +17,23 @@ logging.basicConfig(
 )
 
 
-def get_auth_code(username, password, client_id, redirect_uri):
+def get_env_int(name: str, default: int) -> int:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        logging.warning("Переменная %s не является числом; будем использовать %d", name, default)
+        return default
+
+
+STUDENT_SCORE = get_env_int("STUDENT_SCORE", 100)
+CURATOR_SCORE = get_env_int("CURATOR_SCORE", 100)
+LOOP_FLAG = os.environ.get("LOOP_FLAG", "False").lower() == "true"
+
+
+def get_auth_code(username: str, password: str, client_id: str, redirect_uri: str) -> Tuple[str, requests.Session]:
     session = requests.Session()
 
     auth_url = 'https://keys.urfu.ru/auth/realms/urfu-lk/protocol/openid-connect/auth'
@@ -61,7 +77,7 @@ def get_auth_code(username, password, client_id, redirect_uri):
         return None, session
 
 
-def get_access_token(code, client_id, redirect_uri, session):
+def get_access_token(session: requests.Session, code: str, client_id: str, redirect_uri: str) -> str:
     token_url = 'https://keys.urfu.ru/auth/realms/urfu-lk/protocol/openid-connect/token'
     token_data = {
         'code': code,
@@ -75,11 +91,11 @@ def get_access_token(code, client_id, redirect_uri, session):
     if access_token:
         logging.info("Access token успешно получен.")
     else:
-        logging.warning("Не удалось получить access token.")
+        logging.error("Не удалось получить access token.")
     return access_token
 
 
-def get_current_period(session, access_token):
+def get_current_period(session: requests.Session, access_token: str) -> Tuple[str, str]:
     url = 'https://teamproject.urfu.ru/api/v2/filters/periods'
     headers = {'Authorization': f'Bearer {access_token}'}
     response = session.get(url, headers=headers).json()
@@ -89,7 +105,7 @@ def get_current_period(session, access_token):
     return year, term
 
 
-def get_active_projects(session, access_token, year, term):
+def get_active_projects(session: requests.Session, access_token: str, year: int, term: int) -> list:
     url = f'https://teamproject.urfu.ru/api/v2/catalog?status=active&year={year}&semester={term}&size=9&page=1'
     headers = {'Authorization': f'Bearer {access_token}'}
     items = session.get(url, headers=headers).json()['items']
@@ -97,15 +113,15 @@ def get_active_projects(session, access_token, year, term):
     return items
 
 
-def get_iteration_scores(session, access_token, iteration_id):
+def get_iteration_scores(session: requests.Session, access_token: str, iteration_id: int) -> dict:
     url = f'https://teamproject.urfu.ru/api/v2/iterations/{iteration_id}/scores'
     headers = {'Authorization': f'Bearer {access_token}'}
     response = session.get(url, headers=headers).json()
     return response
 
 
-# Функция для безопасного получения даты
-def get_date_from_dict(info_scores_iter, key, default_value=date.today()):
+def get_date_from_dict(info_scores_iter: dict, key: str, default_value=date.today()) -> datetime.date:
+    """Функция для безопасного получения даты"""
     date_str = info_scores_iter.get('iteration', {}).get('gradingPeriod', {}).get(key, default_value)
     
     # Проверяем, если значение - строка, пытаемся преобразовать его в datetime.date
@@ -114,7 +130,7 @@ def get_date_from_dict(info_scores_iter, key, default_value=date.today()):
     return date_str
 
 
-def grade_all(session, access_token, projects, student_score, curator_score):
+def grade_all(session: requests.Session, access_token: str, projects: list, student_score: int, curator_score: int):
     put_headers = {
         'Authorization': f'Bearer {access_token}',
         'Content-Type': 'application/json'
@@ -135,12 +151,13 @@ def grade_all(session, access_token, projects, student_score, curator_score):
             info_scores_iter = get_iteration_scores(session, access_token, iter_id)
 
             begin_date = get_date_from_dict(info_scores_iter, 'beginning')
+            today_date = date.today()
             end_date = get_date_from_dict(info_scores_iter, 'ending')
 
-            if begin_date <= date.today() <= end_date:
+            if begin_date <= today_date <= end_date:
                 session.put(f'https://teamproject.urfu.ru/api/v2/iterations/{iter_id}/grades/curator',
                             headers=put_headers, data='{"score":'+str(curator_score)+'}')
-                logging.info(f"[{project_name}] [{iter_name}] Выставлен балл куратору — оценка {curator_score}")
+                logging.info(f"[{project_name}] [{iter_name}] Выставлен балл куратору - оценка {curator_score}")
 
                 for group in info_scores_iter.get('thematicGroups', []):
                     for student in group.get('students', []):
@@ -149,43 +166,52 @@ def grade_all(session, access_token, projects, student_score, curator_score):
 
                         session.put(f'https://teamproject.urfu.ru/api/v2/iterations/{iter_id}/grades/students/{student_id}',
                                     headers=put_headers, data='{"score":'+str(student_score)+'}')
-                        logging.info(f"[{project_name}] [{iter_name}] Студент {student_name} — оценка {student_score}")
-            else:
+                        logging.info(f"[{project_name}] [{iter_name}] Студент {student_name} - оценка {student_score}")
+            elif begin_date < today_date > end_date:
+                logging.info(f"[{project_name}] [{iter_name}] Пропускаем итерацию (так как время для её оценки прошло)")
+            elif today_date < begin_date and today_date < end_date:
                 logging.info(f"[{project_name}] [{iter_name}] Пропускаем итерацию (так как не наступило время для её оценки)")
 
 
-def process_user(credentials):
+def process_user(credentials: dict):
     username = credentials['username']
     password = credentials['password']
     client_id = 'teampro'
     redirect_uri = 'https://teamproject.urfu.ru/'
-    student_score = os.environ.get("STUDENT_SCORE", "100")
-    curator_score = os.environ.get("CURATOR_SCORE", "100")
 
     code, session = get_auth_code(username, password, client_id, redirect_uri)
     if code is None:
         logging.warning("Прерывание выполнения из-за ошибки авторизации.")
         return
 
-    access_token = get_access_token(code, client_id, redirect_uri, session)
+    access_token = get_access_token(session, code, client_id, redirect_uri)
     if not access_token:
-        logging.error("Не удалось получить токен, завершение.")
+        logging.error("Оценка была не проставлена, так как не удалось получить токен.")
         return
 
     year, term = get_current_period(session, access_token)
     projects = get_active_projects(session, access_token, year, term)
-    grade_all(session, access_token, projects, student_score, curator_score)
+
+    grade_all(session, access_token, projects, STUDENT_SCORE, CURATOR_SCORE)
 
 
 def main():
     with open('credentials.json', 'r', encoding='utf-8') as f:
         users = json.load(f)
+        count_users = len(users)
 
     while True:
         for credentials in users:
             process_user(credentials)
-            delay_users = random.uniform(3, 6)
-            time.sleep(delay_users)  # чуть подождать между пользователями
+            # чуть подождать между пользователями
+            if count_users > 1:
+                delay_users = random.uniform(5, 30)
+                logging.info(f"Ждем между пользователями. Пауза на {delay_users} секунд.")
+                time.sleep(delay_users)
+
+        if not LOOP_FLAG:
+            logging.info("Работа завершена после одного прохода. Так как LOOP_FLAG=false.")
+            break
 
         global_delay = random.uniform(18000, 21600)
         global_delay_hours = global_delay / 3600
