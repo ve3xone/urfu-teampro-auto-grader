@@ -4,6 +4,7 @@ import logging
 import json
 import os
 import random
+import uuid
 from typing import Tuple
 from datetime import datetime, date
 from urllib.parse import urlparse, parse_qs
@@ -36,15 +37,20 @@ LOOP_FLAG = os.environ.get("LOOP_FLAG", "False").lower() == "true"
 def get_auth_code(username: str, password: str, client_id: str, redirect_uri: str) -> Tuple[str, requests.Session]:
     session = requests.Session()
 
+    # пореверсил пока хватит простых uuid4
+    # TODO: потом ещё посмотрю
+    state = str(uuid.uuid4())
+    nonce = str(uuid.uuid4())
+
     auth_url = 'https://keys.urfu.ru/auth/realms/urfu-lk/protocol/openid-connect/auth'
     params = {
         'client_id': client_id,
         'redirect_uri': redirect_uri,
-        'state': 'some-random-state',
+        'state': state,
         'response_mode': 'fragment',
         'response_type': 'code',
         'scope': 'openid',
-        'nonce': 'some-random-nonce'
+        'nonce': nonce
     }
 
     try:
