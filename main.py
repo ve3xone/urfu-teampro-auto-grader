@@ -91,30 +91,51 @@ def get_access_token(session: requests.Session, code: str, client_id: str, redir
         'client_id': client_id,
         'redirect_uri': redirect_uri
     }
-
-    response = session.post(token_url, data=token_data)
-    access_token = response.json().get('access_token')
-    if access_token:
-        logging.info("Access token успешно получен.")
-    else:
-        logging.error("Не удалось получить access token.")
-    return access_token
-
+    try:
+        response = session.post(token_url, data=token_data)
+        access_token = response.json().get('access_token')
+        if access_token:
+            logging.info("Access token успешно получен.")
+        else:
+            logging.error("Не удалось получить access token.")
+        return access_token
+    except Exception as e:
+        logging.exception(f"Ошибка при получении access_token: {e}")
+        return None
 
 def get_current_period(session: requests.Session, access_token: str) -> Tuple[str, str]:
     url = 'https://teamproject.urfu.ru/api/v2/filters/periods'
     headers = {'Authorization': f'Bearer {access_token}'}
-    response = session.get(url, headers=headers).json()
-    year = response['current']['year']
-    term = response['current']['term']
-    logging.info(f"Текущий период: {year} / семестр {term}")
-    return year, term
+    try:
+        response = session.get(url, headers=headers).json()
+        year = response.get('current').get('year')
+        term = response.get('current').get('term')
+        logging.info(f"Текущий период: {year} / семестр {term}")
+        return year, term
+    except Exception as e:
+        logging.exception(f'Ошибка в get_current_period: {e}')
+        return None, None
 
 
 def get_active_projects(session: requests.Session, access_token: str, year: int, term: int) -> list:
     url = f'https://teamproject.urfu.ru/api/v2/catalog?status=active&year={year}&semester={term}&size=9&page=1'
     headers = {'Authorization': f'Bearer {access_token}'}
-    items = session.get(url, headers=headers).json()['items']
+    try:
+        response = session.get(url, headers=headers)
+    except:
+        return []
+    
+    if response.status_code == 200:
+        try:
+            data = response.json()
+            items = data.get('items', [])
+        except json.JSONDecodeError as e:
+            logging.error(f"JSON decode error [get_active_projects]: {e}")
+            logging.info(f"Response content [get_active_projects]: {response.text}")
+            items = []
+    else:
+        items = []
+
     logging.info(f"Найдено активных проектов: {len(items)}")
     return items
 
@@ -196,7 +217,16 @@ def process_user(credentials: dict):
         return
 
     year, term = get_current_period(session, access_token)
+    if not year:
+        logging.warning('Нету года.')
+        return
+    if not term:
+        logging.warning('Нету семестра.')
+        return
+
     projects = get_active_projects(session, access_token, year, term)
+    if projects in (None, []):
+        return
 
     grade_all(session, access_token, projects, STUDENT_SCORE, CURATOR_SCORE)
 
