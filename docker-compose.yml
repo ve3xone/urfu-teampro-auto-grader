@@ -8,4 +8,5 @@ services:
     environment:
       - STUDENT_SCORE=100
       - CURATOR_SCORE=100
+      - LOOP_FLAG=true
       - PYTHONUNBUFFERED=1  # чтоб лог сразу шел в консоль
